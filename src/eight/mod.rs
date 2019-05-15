@@ -21,35 +21,38 @@ impl Drop for Geometry {
 }
 
 impl Geometry {
-    pub fn new(vertices: [f32; 9]) -> Geometry {
+    // TODO: The parameters in this call aren't orthogonal because the data is 1:1 with the vertices.
+    pub fn new(index: u32, size: i32, vertices: &[f32]) -> Geometry {
         unsafe {
             let (mut vbo, mut vao) = (0, 0);
+
             gl::GenVertexArrays(1, &mut vao);
+
             gl::GenBuffers(1, &mut vbo);
 
             let geometry = Geometry { vao };
-            // bind the Vertex Array Object first, then bind and set vertex buffer(s), and then configure vertex attributes(s).
+
             geometry.bind();
 
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+
             gl::BufferData(
                 gl::ARRAY_BUFFER,
-                (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr,
-                &vertices[0] as *const f32 as *const c_void,
-                gl::STATIC_DRAW,
+                (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, // size of data (in bytes)
+                &vertices[0] as *const f32 as *const c_void,                // the data to send
+                gl::STATIC_DRAW,                                            // hint to the GPU
             );
 
             gl::VertexAttribPointer(
-                0,
-                3,
+                index,
+                size,
                 gl::FLOAT,
                 gl::FALSE,
                 3 * mem::size_of::<GLfloat>() as GLsizei,
                 ptr::null(),
             );
-            gl::EnableVertexAttribArray(0);
+            gl::EnableVertexAttribArray(index);
 
-            // note that this is allowed, the call to gl::VertexAttribPointer registered VBO as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
 
             geometry.unbind();
@@ -85,20 +88,21 @@ impl Material {
     pub fn new(vertex_shader_source: &str, fragment_shader_source: &str) -> Material {
         // vertex shader
         unsafe {
-            let vertex_shader = gl::CreateShader(gl::VERTEX_SHADER);
+            let vs = gl::CreateShader(gl::VERTEX_SHADER);
             let c_str_vert = CString::new(vertex_shader_source.as_bytes()).unwrap();
-            gl::ShaderSource(vertex_shader, 1, &c_str_vert.as_ptr(), ptr::null());
-            gl::CompileShader(vertex_shader);
+            gl::ShaderSource(vs, 1, &c_str_vert.as_ptr(), ptr::null());
+            gl::CompileShader(vs);
 
             // check for shader compile errors
             let mut success = gl::FALSE as GLint;
-            let mut info_log = Vec::with_capacity(512);
-            info_log.set_len(512 - 1); // subtract 1 to skip the trailing null character
-            gl::GetShaderiv(vertex_shader, gl::COMPILE_STATUS, &mut success);
+            let capacity: usize = 512;
+            let mut info_log = Vec::with_capacity(capacity);
+            info_log.set_len(capacity - 1); // subtract 1 to skip the trailing null character
+            gl::GetShaderiv(vs, gl::COMPILE_STATUS, &mut success);
             if success != gl::TRUE as GLint {
                 gl::GetShaderInfoLog(
-                    vertex_shader,
-                    512,
+                    vs,
+                    capacity as i32,
                     ptr::null_mut(),
                     info_log.as_mut_ptr() as *mut GLchar,
                 );
@@ -109,16 +113,16 @@ impl Material {
             }
 
             // fragment shader
-            let fragment_shader = gl::CreateShader(gl::FRAGMENT_SHADER);
+            let fs = gl::CreateShader(gl::FRAGMENT_SHADER);
             let c_str_frag = CString::new(fragment_shader_source.as_bytes()).unwrap();
-            gl::ShaderSource(fragment_shader, 1, &c_str_frag.as_ptr(), ptr::null());
-            gl::CompileShader(fragment_shader);
+            gl::ShaderSource(fs, 1, &c_str_frag.as_ptr(), ptr::null());
+            gl::CompileShader(fs);
             // check for shader compile errors
-            gl::GetShaderiv(fragment_shader, gl::COMPILE_STATUS, &mut success);
+            gl::GetShaderiv(fs, gl::COMPILE_STATUS, &mut success);
             if success != gl::TRUE as GLint {
                 gl::GetShaderInfoLog(
-                    fragment_shader,
-                    512,
+                    fs,
+                    capacity as i32,
                     ptr::null_mut(),
                     info_log.as_mut_ptr() as *mut GLchar,
                 );
@@ -130,15 +134,15 @@ impl Material {
 
             // link shaders
             let program = gl::CreateProgram();
-            gl::AttachShader(program, vertex_shader);
-            gl::AttachShader(program, fragment_shader);
+            gl::AttachShader(program, vs);
+            gl::AttachShader(program, fs);
             gl::LinkProgram(program);
             // check for linking errors
             gl::GetProgramiv(program, gl::LINK_STATUS, &mut success);
             if success != gl::TRUE as GLint {
                 gl::GetProgramInfoLog(
                     program,
-                    512,
+                    capacity as i32,
                     ptr::null_mut(),
                     info_log.as_mut_ptr() as *mut GLchar,
                 );
@@ -147,8 +151,8 @@ impl Material {
                     str::from_utf8(&info_log).unwrap()
                 );
             }
-            gl::DeleteShader(vertex_shader);
-            gl::DeleteShader(fragment_shader);
+            gl::DeleteShader(vs);
+            gl::DeleteShader(fs);
 
             Material { program }
         }
@@ -174,7 +178,8 @@ impl Mesh {
 
         self.geometry.bind();
 
-        draw();
+        // TODO: Where should mode, first, and count come from?
+        draw_arrays(DrawMode::Triangles, 0, 3);
 
         self.geometry.unbind();
     }
@@ -187,10 +192,23 @@ pub fn clear() {
     }
 }
 
-pub fn draw() {
+#[allow(dead_code)]
+#[repr(u32)]
+#[derive(Clone, Copy)]
+pub enum DrawMode {
+    Lines = gl::LINES,
+    Points = gl::POINTS,
+    Triangles = gl::TRIANGLES,
+}
+
+pub fn draw_arrays(mode: DrawMode, first: GLint, count: GLsizei) {
     unsafe {
-        gl::DrawArrays(gl::TRIANGLES, 0, 3);
+        gl::DrawArrays(mode as u32, first, count);
     }
+}
+
+pub fn viewport(x: i32, y: i32, width: GLsizei, height: GLsizei) {
+    unsafe { gl::Viewport(x, y, width, height) }
 }
 
 pub fn load_with<F>(load_function: F)
