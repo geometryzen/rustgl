@@ -22,25 +22,38 @@ impl Drop for Geometry {
 
 impl Geometry {
     // TODO: The parameters in this call aren't orthogonal because the data is 1:1 with the vertices.
-    pub fn new(index: u32, size: i32, vertices: &[f32]) -> Geometry {
+    pub fn new(index: u32, size: i32, vertices: &[f32], indices: &[u32]) -> Geometry {
         unsafe {
-            let (mut vbo, mut vao) = (0, 0);
+            let (mut vao, mut ebo, mut vbo) = (0, 0, 0);
 
             gl::GenVertexArrays(1, &mut vao);
 
+            gl::GenBuffers(1, &mut ebo);
             gl::GenBuffers(1, &mut vbo);
 
             let geometry = Geometry { vao };
 
             geometry.bind();
 
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
+            // println!("indices.len() = {}", indices.len());
+            // println!("mem::size_of::<GLfloat>() = {}", mem::size_of::<GLfloat>());
+            // println!("mem::size_of::<GLuint>() = {}", mem::size_of::<GLuint>());
+            // println!("mem::size_of::<u32>() = {}", mem::size_of::<u32>());
 
+            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
             gl::BufferData(
                 gl::ARRAY_BUFFER,
-                (vertices.len() * mem::size_of::<GLfloat>()) as GLsizeiptr, // size of data (in bytes)
-                &vertices[0] as *const f32 as *const c_void,                // the data to send
-                gl::STATIC_DRAW,                                            // hint to the GPU
+                (vertices.len() * mem::size_of::<f32>()) as GLsizeiptr,
+                &vertices[0] as *const f32 as *const c_void,
+                gl::STATIC_DRAW,
+            );
+
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
+            gl::BufferData(
+                gl::ELEMENT_ARRAY_BUFFER,
+                (indices.len() * mem::size_of::<u32>()) as GLsizeiptr,
+                &indices[0] as *const u32 as *const c_void,
+                gl::STATIC_DRAW,
             );
 
             gl::VertexAttribPointer(
@@ -53,9 +66,17 @@ impl Geometry {
             );
             gl::EnableVertexAttribArray(index);
 
+            // note that this is allowed, the call to gl::VertexAttribPointer registered VBO
+            // as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
 
+            // remember: do NOT unbind the EBO while a VAO is active as the bound element buffer object
+            // IS stored in the VAO; keep the EBO bound.
+            // gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
+
             geometry.unbind();
+
+            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
 
             geometry
         }
@@ -179,7 +200,8 @@ impl Mesh {
         self.geometry.bind();
 
         // TODO: Where should mode, first, and count come from?
-        draw_arrays(DrawMode::Triangles, 0, 3);
+        // draw_arrays(DrawMode::Triangles, 0, 3);
+        draw_elements(DrawMode::Triangles, 6);
 
         self.geometry.unbind();
     }
@@ -201,9 +223,18 @@ pub enum DrawMode {
     Triangles = gl::TRIANGLES,
 }
 
+#[allow(dead_code)]
 pub fn draw_arrays(mode: DrawMode, first: GLint, count: GLsizei) {
     unsafe {
         gl::DrawArrays(mode as u32, first, count);
+    }
+}
+
+#[allow(dead_code)]
+#[allow(unused_variables)]
+pub fn draw_elements(mode: DrawMode, count: GLsizei) {
+    unsafe {
+        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
     }
 }
 

@@ -22,7 +22,7 @@ const fragmentShaderSource: &str = r##"#version 460 core
     out vec4 FragColor;
     void main()
     {
-       FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
+       FragColor = vec4(1.0f, 0.5f, 0.2f, 1.0f);
     }
 "##;
 
@@ -47,15 +47,19 @@ pub fn main() {
 
     eight::load_with(|symbol| window.get_proc_address(symbol));
 
-    let vertices: [f32; 9] = [
-        -0.5, -0.5, 0.0, // left
-        0.5, -0.5, 0.0, // right
-        0.0, 0.5, 0.0, // top
+    let vertices: [f32; 24] = [
+        0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5,
+        -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5,
+    ];
+
+    let indices: [u32; 36] = [
+        1, 2, 0, 3, 0, 2, 5, 6, 0, 1, 0, 6, 2, 1, 7, 6, 7, 1, 5, 0, 4, 3, 4, 0, 2, 7, 3, 4, 3, 7,
+        7, 6, 4, 6, 4, 6,
     ];
 
     let location = 0;
     let size = 3;
-    let geometry = eight::Geometry::new(location, size, &vertices);
+    let geometry = eight::Geometry::new(location, size, &vertices, &indices);
 
     let material = eight::Material::new(vertexShaderSource, fragmentShaderSource);
 
