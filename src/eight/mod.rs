@@ -8,20 +8,28 @@ use std::ptr;
 use std::ffi::CString;
 use std::str;
 
-pub struct VertexArray {
-    pub vao: GLuint,
+pub struct Geometry {
+    vao: GLuint,
 }
 
-impl VertexArray {
-    pub fn new(vertices: [f32; 9]) -> VertexArray {
+impl Drop for Geometry {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteVertexArrays(1, &mut self.vao);
+        }
+    }
+}
+
+impl Geometry {
+    pub fn new(vertices: [f32; 9]) -> Geometry {
         unsafe {
             let (mut vbo, mut vao) = (0, 0);
             gl::GenVertexArrays(1, &mut vao);
             gl::GenBuffers(1, &mut vbo);
 
-            let va = VertexArray { vao };
+            let geometry = Geometry { vao };
             // bind the Vertex Array Object first, then bind and set vertex buffer(s), and then configure vertex attributes(s).
-            va.bind();
+            geometry.bind();
 
             gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
             gl::BufferData(
@@ -44,9 +52,9 @@ impl VertexArray {
             // note that this is allowed, the call to gl::VertexAttribPointer registered VBO as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
             gl::BindBuffer(gl::ARRAY_BUFFER, 0);
 
-            va.unbind();
+            geometry.unbind();
 
-            va
+            geometry
         }
     }
     pub fn bind(&self) {
@@ -150,4 +158,44 @@ impl Material {
             gl::UseProgram(self.program);
         }
     }
+}
+
+pub struct Mesh {
+    geometry: Geometry,
+    material: Material,
+}
+
+impl Mesh {
+    pub fn new(geometry: Geometry, material: Material) -> Mesh {
+        Mesh { geometry, material }
+    }
+    pub fn render(&self) {
+        self.material.use_program();
+
+        self.geometry.bind();
+
+        draw();
+
+        self.geometry.unbind();
+    }
+}
+
+pub fn clear() {
+    unsafe {
+        gl::ClearColor(0.1, 0.1, 0.1, 1.0);
+        gl::Clear(gl::COLOR_BUFFER_BIT);
+    }
+}
+
+pub fn draw() {
+    unsafe {
+        gl::DrawArrays(gl::TRIANGLES, 0, 3);
+    }
+}
+
+pub fn load_with<F>(load_function: F)
+where
+    F: FnMut(&'static str) -> *const c_void,
+{
+    gl::load_with(load_function);
 }

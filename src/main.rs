@@ -7,8 +7,8 @@ use std::sync::mpsc::Receiver;
 
 mod eight;
 
-const SCR_WIDTH: u32 = 800;
-const SCR_HEIGHT: u32 = 600;
+const WIDTH: u32 = 800;
+const HEIGHT: u32 = 600;
 
 const vertexShaderSource: &str = r##"#version 330 core
     layout (location = 0) in vec3 aPos;
@@ -24,19 +24,6 @@ const fragmentShaderSource: &str = r##"#version 330 core
     }
 "##;
 
-fn clear() {
-    unsafe {
-        gl::ClearColor(0.1, 0.1, 0.1, 1.0);
-        gl::Clear(gl::COLOR_BUFFER_BIT);
-    }
-}
-
-fn draw() {
-    unsafe {
-        gl::DrawArrays(gl::TRIANGLES, 0, 3);
-    }
-}
-
 pub fn main() {
     let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
     glfw.window_hint(glfw::WindowHint::ContextVersion(4, 6));
@@ -47,14 +34,14 @@ pub fn main() {
     glfw.window_hint(glfw::WindowHint::OpenGlForwardCompat(true));
 
     let (mut window, events) = glfw
-        .create_window(SCR_WIDTH, SCR_HEIGHT, "RustGL", glfw::WindowMode::Windowed)
+        .create_window(WIDTH, HEIGHT, "RustGL", glfw::WindowMode::Windowed)
         .expect("Failed to create GLFW window");
 
     window.make_current();
     window.set_key_polling(true);
     window.set_framebuffer_size_polling(true);
 
-    gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
+    eight::load_with(|symbol| window.get_proc_address(symbol));
 
     let vertices: [f32; 9] = [
         -0.5, -0.5, 0.0, // left
@@ -62,22 +49,18 @@ pub fn main() {
         0.0, 0.5, 0.0, // top
     ];
 
-    let geometry = eight::VertexArray::new(vertices);
+    let geometry = eight::Geometry::new(vertices);
 
     let material = eight::Material::new(vertexShaderSource, fragmentShaderSource);
+
+    let mesh = eight::Mesh::new(geometry, material);
 
     while !window.should_close() {
         process_events(&mut window, &events);
 
-        clear();
+        eight::clear();
 
-        material.use_program();
-
-        geometry.bind();
-
-        draw();
-
-        geometry.unbind();
+        mesh.render();
 
         window.swap_buffers();
 
