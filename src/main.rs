@@ -94,6 +94,15 @@ fn process_events(window: &mut glfw::Window, events: &Receiver<(f64, glfw::Windo
             glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
                 window.set_should_close(true)
             }
+            glfw::WindowEvent::Key(Key::Num1, _, Action::Press, _) => unsafe {
+                gl::PolygonMode(gl::FRONT_AND_BACK, gl::POINT)
+            },
+            glfw::WindowEvent::Key(Key::Num2, _, Action::Press, _) => unsafe {
+                gl::PolygonMode(gl::FRONT_AND_BACK, gl::LINE)
+            },
+            glfw::WindowEvent::Key(Key::Num3, _, Action::Press, _) => unsafe {
+                gl::PolygonMode(gl::FRONT_AND_BACK, gl::FILL)
+            },
             _ => {}
         }
     }
