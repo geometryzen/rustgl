@@ -7,14 +7,20 @@ use std::sync::mpsc::Receiver;
 
 mod eight;
 
+use cgmath::prelude::*;
+use cgmath::{Matrix4, Rad};
+
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 800;
 
 const vertexShaderSource: &str = r##"#version 460 core
     layout (location = 0) in vec3 aPos;
+
+    uniform mat4 transform;
+
     void main()
     {
-       gl_Position = vec4(aPos.x, aPos.y, aPos.z, 1.0);
+       gl_Position = transform * vec4(aPos.x, aPos.y, aPos.z, 1.0);
     }
 "##;
 
@@ -70,7 +76,11 @@ pub fn main() {
 
         eight::clear();
 
-        mesh.render();
+        let mut transform: Matrix4<f32> = Matrix4::identity();
+        // transform = transform * Matrix4::<f32>::from_translation(vec3(0.5, -0.5, 0.0));
+        transform = transform * Matrix4::<f32>::from_angle_z(Rad(glfw.get_time() as f32));
+
+        mesh.render(&transform);
 
         window.swap_buffers();
 

@@ -5,8 +5,11 @@ use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
 
+use cgmath::prelude::*;
+use cgmath::Matrix4;
 use std::ffi::CString;
 use std::str;
+// use std::ffi::CString;
 
 pub struct Geometry {
     vao: GLuint,
@@ -183,6 +186,9 @@ impl Material {
             gl::UseProgram(self.program);
         }
     }
+    pub fn get_uniform_location(&self, name: &str) -> i32 {
+        unsafe { gl::GetUniformLocation(self.program, CString::new(name).unwrap().as_ptr()) }
+    }
 }
 
 pub struct Mesh {
@@ -194,8 +200,13 @@ impl Mesh {
     pub fn new(geometry: Geometry, material: Material) -> Mesh {
         Mesh { geometry, material }
     }
-    pub fn render(&self) {
+    pub fn render(&self, transform: &Matrix4<f32>) {
         self.material.use_program();
+
+        let location = self.material.get_uniform_location("transform");
+        unsafe {
+            gl::UniformMatrix4fv(location, 1, gl::FALSE, transform.as_ptr());
+        }
 
         self.geometry.bind();
 
