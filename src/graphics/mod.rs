@@ -5,27 +5,24 @@ use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
 
-use cgmath::prelude::*;
-use cgmath::Matrix4;
 use std::ffi::CString;
 use std::str;
-// use std::ffi::CString;
 
-pub struct Geometry {
-    vao: GLuint,
+pub struct VertexArray {
+    id: GLuint,
 }
 
-impl Drop for Geometry {
+impl Drop for VertexArray {
     fn drop(&mut self) {
         unsafe {
-            gl::DeleteVertexArrays(1, &mut self.vao);
+            gl::DeleteVertexArrays(1, &mut self.id);
         }
     }
 }
 
-impl Geometry {
+impl VertexArray {
     // TODO: The parameters in this call aren't orthogonal because the data is 1:1 with the vertices.
-    pub fn new(index: u32, size: i32, vertices: &[f32], indices: &[u32]) -> Geometry {
+    pub fn new(index: u32, size: i32, vertices: &[f32], indices: &[u32]) -> VertexArray {
         unsafe {
             let (mut vao, mut ebo, mut vbo) = (0, 0, 0);
 
@@ -34,7 +31,7 @@ impl Geometry {
             gl::GenBuffers(1, &mut ebo);
             gl::GenBuffers(1, &mut vbo);
 
-            let geometry = Geometry { vao };
+            let geometry = VertexArray { id: vao };
 
             geometry.bind();
 
@@ -84,11 +81,13 @@ impl Geometry {
             geometry
         }
     }
+    /// glBindVertexArray(self.ID)
     pub fn bind(&self) {
         unsafe {
-            gl::BindVertexArray(self.vao);
+            gl::BindVertexArray(self.id);
         }
     }
+    /// glBindVertexArray(0)
     pub fn unbind(&self) {
         unsafe {
             gl::BindVertexArray(0);
@@ -96,20 +95,20 @@ impl Geometry {
     }
 }
 
-pub struct Material {
-    program: GLuint,
+pub struct Program {
+    id: GLuint,
 }
 
-impl Drop for Material {
+impl Drop for Program {
     fn drop(&mut self) {
         unsafe {
-            gl::DeleteProgram(self.program);
+            gl::DeleteProgram(self.id);
         }
     }
 }
 
-impl Material {
-    pub fn new(vertex_shader_source: &str, fragment_shader_source: &str) -> Material {
+impl Program {
+    pub fn new(vertex_shader_source: &str, fragment_shader_source: &str) -> Program {
         // vertex shader
         unsafe {
             let vs = gl::CreateShader(gl::VERTEX_SHADER);
@@ -178,43 +177,16 @@ impl Material {
             gl::DeleteShader(vs);
             gl::DeleteShader(fs);
 
-            Material { program }
+            Program { id: program }
         }
     }
     pub fn use_program(&self) {
         unsafe {
-            gl::UseProgram(self.program);
+            gl::UseProgram(self.id);
         }
     }
     pub fn get_uniform_location(&self, name: &str) -> i32 {
-        unsafe { gl::GetUniformLocation(self.program, CString::new(name).unwrap().as_ptr()) }
-    }
-}
-
-pub struct Mesh {
-    geometry: Geometry,
-    material: Material,
-}
-
-impl Mesh {
-    pub fn new(geometry: Geometry, material: Material) -> Mesh {
-        Mesh { geometry, material }
-    }
-    pub fn render(&self, transform: &Matrix4<f32>) {
-        self.material.use_program();
-
-        let location = self.material.get_uniform_location("transform");
-        unsafe {
-            gl::UniformMatrix4fv(location, 1, gl::FALSE, transform.as_ptr());
-        }
-
-        self.geometry.bind();
-
-        // TODO: Where should mode, first, and count come from?
-        // draw_arrays(DrawMode::Triangles, 0, 3);
-        draw_elements(DrawMode::Triangles, 6);
-
-        self.geometry.unbind();
+        unsafe { gl::GetUniformLocation(self.id, CString::new(name).unwrap().as_ptr()) }
     }
 }
 
