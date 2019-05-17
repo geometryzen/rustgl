@@ -1,96 +1,176 @@
 extern crate gl;
 use self::gl::types::*;
 
-use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
 
+use std::ffi::CStr;
 use std::ffi::CString;
 use std::str;
 
+/// A BufferTarget is something to which a Buffer object may be bound.
+#[allow(dead_code)]
+pub enum BufferTarget {
+    Array,
+    ElementArray,
+    ShaderStorage,
+}
+
+impl BufferTarget {
+    pub fn bind(self, buffer: &Buffer) {
+        unsafe {
+            gl::BindBuffer(self.target(), buffer.name);
+        }
+    }
+    pub fn unbind(self) -> () {
+        unsafe {
+            gl::BindBuffer(self.target(), 0);
+        }
+    }
+    pub fn buffer_data(self, size: usize, data: *const c_void, usage: GLenum) {
+        unsafe {
+            gl::BufferData(self.target(), size as GLsizeiptr, data, usage);
+        }
+    }
+    fn target(self) -> GLenum {
+        match self {
+            BufferTarget::Array => gl::ARRAY_BUFFER,
+            BufferTarget::ElementArray => gl::ELEMENT_ARRAY_BUFFER,
+            BufferTarget::ShaderStorage => gl::SHADER_STORAGE_BUFFER,
+        }
+    }
+}
+
+/// Buffers can be bound to multiple targets, which implies they should be handled generically.
+pub struct Buffer {
+    name: GLuint,
+}
+
+impl Buffer {
+    pub fn new() -> Buffer {
+        let mut name = 0;
+        unsafe {
+            // generate buffer object name.
+            gl::GenBuffers(1, &mut name);
+        }
+        Buffer { name }
+    }
+}
+
+// TODO: Why is it OK to delete an buffer, but still use it in a VertexArray?
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        unsafe {
+            // delete the buffer object and allow the name to be reused.
+            // println!("drop Buffer[name={}]", self.name);
+            gl::DeleteBuffers(1, &mut self.name);
+        }
+    }
+}
+
 pub struct VertexArray {
-    id: GLuint,
+    name: GLuint,
 }
 
 impl Drop for VertexArray {
     fn drop(&mut self) {
         unsafe {
-            gl::DeleteVertexArrays(1, &mut self.id);
+            gl::DeleteVertexArrays(1, &mut self.name);
         }
     }
 }
 
 impl VertexArray {
-    // TODO: The parameters in this call aren't orthogonal because the data is 1:1 with the vertices.
-    pub fn new(index: u32, size: i32, vertices: &[f32], indices: &[u32]) -> VertexArray {
+    pub fn new() -> VertexArray {
+        let mut name = 0;
         unsafe {
-            let (mut vao, mut ebo, mut vbo) = (0, 0, 0);
-
-            gl::GenVertexArrays(1, &mut vao);
-
-            gl::GenBuffers(1, &mut ebo);
-            gl::GenBuffers(1, &mut vbo);
-
-            let geometry = VertexArray { id: vao };
-
-            geometry.bind();
-
-            // println!("indices.len() = {}", indices.len());
-            // println!("mem::size_of::<GLfloat>() = {}", mem::size_of::<GLfloat>());
-            // println!("mem::size_of::<GLuint>() = {}", mem::size_of::<GLuint>());
-            // println!("mem::size_of::<u32>() = {}", mem::size_of::<u32>());
-
-            gl::BindBuffer(gl::ARRAY_BUFFER, vbo);
-            gl::BufferData(
-                gl::ARRAY_BUFFER,
-                (vertices.len() * mem::size_of::<f32>()) as GLsizeiptr,
-                &vertices[0] as *const f32 as *const c_void,
-                gl::STATIC_DRAW,
-            );
-
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, ebo);
-            gl::BufferData(
-                gl::ELEMENT_ARRAY_BUFFER,
-                (indices.len() * mem::size_of::<u32>()) as GLsizeiptr,
-                &indices[0] as *const u32 as *const c_void,
-                gl::STATIC_DRAW,
-            );
-
-            gl::VertexAttribPointer(
-                index,
-                size,
-                gl::FLOAT,
-                gl::FALSE,
-                3 * mem::size_of::<GLfloat>() as GLsizei,
-                ptr::null(),
-            );
-            gl::EnableVertexAttribArray(index);
-
-            // note that this is allowed, the call to gl::VertexAttribPointer registered VBO
-            // as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
-            gl::BindBuffer(gl::ARRAY_BUFFER, 0);
-
-            // remember: do NOT unbind the EBO while a VAO is active as the bound element buffer object
-            // IS stored in the VAO; keep the EBO bound.
-            // gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
-
-            geometry.unbind();
-
-            gl::BindBuffer(gl::ELEMENT_ARRAY_BUFFER, 0);
-
-            geometry
+            gl::GenVertexArrays(1, &mut name);
         }
+        VertexArray { name }
     }
     /// glBindVertexArray(self.ID)
     pub fn bind(&self) {
         unsafe {
-            gl::BindVertexArray(self.id);
+            gl::BindVertexArray(self.name);
         }
     }
     /// glBindVertexArray(0)
     pub fn unbind(&self) {
         unsafe {
             gl::BindVertexArray(0);
+        }
+    }
+}
+
+#[allow(dead_code)]
+#[repr(u32)]
+#[derive(Clone, Copy)]
+pub enum ShaderType {
+    Vertex = gl::VERTEX_SHADER,
+    Fragment = gl::FRAGMENT_SHADER,
+    Compute = gl::COMPUTE_SHADER,
+    Geometry = gl::GEOMETRY_SHADER,
+}
+
+pub struct Shader {
+    id: GLuint,
+}
+
+impl Shader {
+    pub fn create(shader_type: ShaderType) -> Shader {
+        let id = unsafe { gl::CreateShader(shader_type as GLenum) };
+        Shader { id }
+    }
+    pub fn source(&self, text: &str) {
+        unsafe {
+            let c_str_vert = CString::new(text.as_bytes()).unwrap();
+            gl::ShaderSource(self.id, 1, &c_str_vert.as_ptr(), ptr::null());
+        }
+    }
+    pub fn compile(&self) -> Result<(), String> {
+        unsafe {
+            gl::CompileShader(self.id);
+
+            let mut status: GLint = 0;
+            gl::GetShaderiv(self.id, gl::COMPILE_STATUS, &mut status);
+            if status == gl::TRUE as GLint {
+                Ok(())
+            } else {
+                Err(self.info_log())
+            }
+        }
+    }
+    fn info_log(&self) -> String {
+        let mut log_length: GLint = 0;
+        unsafe {
+            gl::GetShaderiv(self.id, gl::INFO_LOG_LENGTH, &mut log_length);
+            if log_length > 0 {
+                let capacity = log_length as usize;
+                let mut info_log: Vec<u8> = Vec::with_capacity(capacity);
+                info_log.set_len(capacity);
+
+                gl::GetShaderInfoLog(
+                    self.id,
+                    log_length,
+                    ptr::null_mut(),
+                    info_log.as_mut_ptr() as *mut GLchar,
+                );
+                CStr::from_bytes_with_nul(&info_log)
+                    .unwrap()
+                    .to_owned()
+                    .into_string()
+                    .unwrap()
+            } else {
+                String::new()
+            }
+        }
+    }
+}
+
+impl Drop for Shader {
+    fn drop(&mut self) {
+        unsafe {
+            gl::DeleteShader(self.id);
         }
     }
 }
@@ -108,76 +188,51 @@ impl Drop for Program {
 }
 
 impl Program {
-    pub fn new(vertex_shader_source: &str, fragment_shader_source: &str) -> Program {
-        // vertex shader
+    pub fn create() -> Program {
+        let id = unsafe { gl::CreateProgram() };
+        Program { id }
+    }
+    pub fn attach(&self, shader: &Shader) {
         unsafe {
-            let vs = gl::CreateShader(gl::VERTEX_SHADER);
-            let c_str_vert = CString::new(vertex_shader_source.as_bytes()).unwrap();
-            gl::ShaderSource(vs, 1, &c_str_vert.as_ptr(), ptr::null());
-            gl::CompileShader(vs);
+            gl::AttachShader(self.id, shader.id);
+        }
+    }
+    pub fn link(&self) -> Result<(), String> {
+        unsafe {
+            gl::LinkProgram(self.id);
 
-            // check for shader compile errors
-            let mut success = gl::FALSE as GLint;
-            let capacity: usize = 512;
-            let mut info_log = Vec::with_capacity(capacity);
-            info_log.set_len(capacity - 1); // subtract 1 to skip the trailing null character
-            gl::GetShaderiv(vs, gl::COMPILE_STATUS, &mut success);
-            if success != gl::TRUE as GLint {
-                gl::GetShaderInfoLog(
-                    vs,
-                    capacity as i32,
-                    ptr::null_mut(),
-                    info_log.as_mut_ptr() as *mut GLchar,
-                );
-                println!(
-                    "ERROR::SHADER::VERTEX::COMPILATION_FAILED\n{}",
-                    str::from_utf8(&info_log).unwrap()
-                );
+            let mut status: GLint = 0;
+            gl::GetProgramiv(self.id, gl::LINK_STATUS, &mut status);
+            if status == gl::TRUE as GLint {
+                Ok(())
+            } else {
+                Err(self.info_log())
             }
+        }
+    }
+    fn info_log(&self) -> String {
+        let mut log_length: GLint = 0;
+        unsafe {
+            gl::GetProgramiv(self.id, gl::INFO_LOG_LENGTH, &mut log_length);
+            if log_length > 0 {
+                let capacity = log_length as usize;
+                let mut info_log: Vec<u8> = Vec::with_capacity(capacity);
+                info_log.set_len(capacity);
 
-            // fragment shader
-            let fs = gl::CreateShader(gl::FRAGMENT_SHADER);
-            let c_str_frag = CString::new(fragment_shader_source.as_bytes()).unwrap();
-            gl::ShaderSource(fs, 1, &c_str_frag.as_ptr(), ptr::null());
-            gl::CompileShader(fs);
-            // check for shader compile errors
-            gl::GetShaderiv(fs, gl::COMPILE_STATUS, &mut success);
-            if success != gl::TRUE as GLint {
-                gl::GetShaderInfoLog(
-                    fs,
-                    capacity as i32,
-                    ptr::null_mut(),
-                    info_log.as_mut_ptr() as *mut GLchar,
-                );
-                println!(
-                    "ERROR::SHADER::FRAGMENT::COMPILATION_FAILED\n{}",
-                    str::from_utf8(&info_log).unwrap()
-                );
-            }
-
-            // link shaders
-            let program = gl::CreateProgram();
-            gl::AttachShader(program, vs);
-            gl::AttachShader(program, fs);
-            gl::LinkProgram(program);
-            // check for linking errors
-            gl::GetProgramiv(program, gl::LINK_STATUS, &mut success);
-            if success != gl::TRUE as GLint {
                 gl::GetProgramInfoLog(
-                    program,
-                    capacity as i32,
+                    self.id,
+                    log_length,
                     ptr::null_mut(),
                     info_log.as_mut_ptr() as *mut GLchar,
                 );
-                println!(
-                    "ERROR::SHADER::PROGRAM::COMPILATION_FAILED\n{}",
-                    str::from_utf8(&info_log).unwrap()
-                );
+                CStr::from_bytes_with_nul(&info_log)
+                    .unwrap()
+                    .to_owned()
+                    .into_string()
+                    .unwrap()
+            } else {
+                String::new()
             }
-            gl::DeleteShader(vs);
-            gl::DeleteShader(fs);
-
-            Program { id: program }
         }
     }
     pub fn use_program(&self) {
@@ -190,10 +245,35 @@ impl Program {
     }
 }
 
+#[allow(dead_code)]
+pub fn clear_color(red: f32, green: f32, blue: f32, alpha: f32) {
+    unsafe {
+        gl::ClearColor(red, green, blue, alpha);
+    }
+}
+
 pub fn clear() {
     unsafe {
-        gl::ClearColor(0.1, 0.1, 0.1, 1.0);
         gl::Clear(gl::COLOR_BUFFER_BIT);
+    }
+}
+
+pub fn vertex_attrib_pointer(
+    index: GLuint,
+    size: GLint,
+    type_: GLenum,
+    normalized: GLboolean,
+    stride: usize,
+    pointer: *const GLvoid,
+) {
+    unsafe {
+        gl::VertexAttribPointer(index, size, type_, normalized, stride as GLsizei, pointer);
+    }
+}
+
+pub fn enable_vertex_attrib_array(index: GLuint) {
+    unsafe {
+        gl::EnableVertexAttribArray(index);
     }
 }
 
