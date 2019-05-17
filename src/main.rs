@@ -151,11 +151,11 @@ pub fn main() {
 
     let vao = vertex_array_from_vertices(location, size, &vertices, &indices);
 
-    let vs = graphics::Shader::create(graphics::ShaderType::Vertex);
+    let vs = graphics::ShaderType::Vertex.create();
     vs.source(vertexShaderSource);
     vs.compile().unwrap();
 
-    let fs = graphics::Shader::create(graphics::ShaderType::Fragment);
+    let fs = graphics::ShaderType::Fragment.create();
     fs.source(fragmentShaderSource);
     fs.compile().unwrap();
 

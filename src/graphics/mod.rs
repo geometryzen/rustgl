@@ -103,13 +103,26 @@ impl VertexArray {
 }
 
 #[allow(dead_code)]
-#[repr(u32)]
-#[derive(Clone, Copy)]
 pub enum ShaderType {
-    Vertex = gl::VERTEX_SHADER,
-    Fragment = gl::FRAGMENT_SHADER,
-    Compute = gl::COMPUTE_SHADER,
-    Geometry = gl::GEOMETRY_SHADER,
+    Vertex,
+    Fragment,
+    Compute,
+    Geometry,
+}
+
+impl ShaderType {
+    pub fn create(self) -> Shader {
+        let id = unsafe { gl::CreateShader(self.target()) };
+        Shader { id }
+    }
+    fn target(self) -> GLenum {
+        match self {
+            ShaderType::Vertex => gl::VERTEX_SHADER,
+            ShaderType::Fragment => gl::FRAGMENT_SHADER,
+            ShaderType::Compute => gl::COMPUTE_SHADER,
+            ShaderType::Geometry => gl::GEOMETRY_SHADER,
+        }
+    }
 }
 
 pub struct Shader {
@@ -117,10 +130,6 @@ pub struct Shader {
 }
 
 impl Shader {
-    pub fn create(shader_type: ShaderType) -> Shader {
-        let id = unsafe { gl::CreateShader(shader_type as GLenum) };
-        Shader { id }
-    }
     pub fn source(&self, text: &str) {
         unsafe {
             let c_str_vert = CString::new(text.as_bytes()).unwrap();
