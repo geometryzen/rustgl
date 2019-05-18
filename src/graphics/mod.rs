@@ -43,7 +43,7 @@ impl BufferTarget {
 
 /// Buffers can be bound to multiple targets, which implies they should be handled generically.
 pub struct Buffer {
-    name: GLuint,
+    pub name: GLuint,
 }
 
 impl Buffer {
@@ -68,6 +68,7 @@ impl Drop for Buffer {
     }
 }
 
+/// VertexArray stores all of the state needed to supply vertex data to a program with a vertex shader.
 pub struct VertexArray {
     name: GLuint,
 }
@@ -88,13 +89,11 @@ impl VertexArray {
         }
         VertexArray { name }
     }
-    /// glBindVertexArray(self.ID)
     pub fn bind(&self) {
         unsafe {
             gl::BindVertexArray(self.name);
         }
     }
-    /// glBindVertexArray(0)
     pub fn unbind(&self) {
         unsafe {
             gl::BindVertexArray(0);
@@ -112,10 +111,10 @@ pub enum ShaderType {
 
 impl ShaderType {
     pub fn create(self) -> Shader {
-        let id = unsafe { gl::CreateShader(self.target()) };
+        let id = unsafe { gl::CreateShader(self.gl_enum()) };
         Shader { id }
     }
-    fn target(self) -> GLenum {
+    fn gl_enum(self) -> GLenum {
         match self {
             ShaderType::Vertex => gl::VERTEX_SHADER,
             ShaderType::Fragment => gl::FRAGMENT_SHADER,
@@ -249,6 +248,7 @@ impl Program {
             gl::UseProgram(self.id);
         }
     }
+    #[allow(dead_code)]
     pub fn get_uniform_location(&self, name: &str) -> i32 {
         unsafe { gl::GetUniformLocation(self.id, CString::new(name).unwrap().as_ptr()) }
     }
@@ -280,9 +280,18 @@ pub fn vertex_attrib_pointer(
     }
 }
 
-pub fn enable_vertex_attrib_array(index: GLuint) {
+/// Enables the transfer of data from the current GL_ARRAY_BUFFER to a vertex shader attribute/input location.
+#[allow(dead_code)]
+pub fn enable_vertex_attrib(location: GLuint) {
     unsafe {
-        gl::EnableVertexAttribArray(index);
+        gl::EnableVertexAttribArray(location);
+    }
+}
+
+#[allow(dead_code)]
+pub fn disable_vertex_attrib(location: GLuint) {
+    unsafe {
+        gl::DisableVertexAttribArray(location);
     }
 }
 
@@ -304,9 +313,14 @@ pub fn draw_arrays(mode: DrawMode, first: GLint, count: GLsizei) {
 
 #[allow(dead_code)]
 #[allow(unused_variables)]
-pub fn draw_elements(mode: DrawMode, count: GLsizei) {
+pub fn draw_elements(mode: DrawMode, count: u32) {
     unsafe {
-        gl::DrawElements(gl::TRIANGLES, 6, gl::UNSIGNED_INT, ptr::null());
+        gl::DrawElements(
+            gl::TRIANGLES,
+            count as GLsizei,
+            gl::UNSIGNED_INT,
+            ptr::null(),
+        );
     }
 }
 

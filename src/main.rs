@@ -2,6 +2,9 @@
 extern crate glfw;
 use self::glfw::{Action, Context, Key};
 
+// extern crate gl;
+// use self::gl::types::*;
+
 use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
@@ -9,111 +12,25 @@ use std::str;
 use std::sync::mpsc::Receiver;
 
 mod graphics;
+#[allow(unused_imports)]
+use graphics::{
+    clear, clear_color, disable_vertex_attrib, draw_arrays, draw_elements, enable_vertex_attrib,
+    vertex_attrib_pointer, viewport,
+};
+#[allow(unused_imports)]
+use graphics::{
+    Buffer, BufferTarget::Array, BufferTarget::ElementArray, DrawMode::Points, DrawMode::Triangles,
+    Program, ShaderType, VertexArray,
+};
 
-use cgmath::prelude::*;
-use cgmath::{Matrix4, Rad};
+// use cgmath::prelude::*;
+// use cgmath::{Matrix4, Rad};
 
 const WIDTH: u32 = 800;
 const HEIGHT: u32 = 800;
 
-const vertexShaderSource: &str = r##"#version 460 core
-    layout (location = 0) in vec3 aPos;
-
-    uniform mat4 transform;
-
-    void main()
-    {
-       gl_Position = transform * vec4(aPos.x, aPos.y, aPos.z, 1.0);
-    }
-"##;
-
-const fragmentShaderSource: &str = r##"#version 460 core
-    out vec4 FragColor;
-    void main()
-    {
-       FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
-    }
-"##;
-
-#[allow(dead_code)]
-const computeShaderSource: &str = r##"#version 460 core
-
-// The uniform parameters which is passed from application for every frame.
-
-uniform float radius;
-
-// Declare custom data struct, which represents either vertex or colour.
-
-struct Vector3f
-{
-    float x;
-    float y;
-    float z;
-    float w;
-};
-
-// Declare the custom data type, which represents one point of a circle.
-// And this is vertex position and colour respectively.
-// As you may already noticed that will define the interleaved data within
-// buffer which is Vertex|Colour|Vertex|Colour|…
-
-struct AttribData
-{
-    Vector3f v;
-    Vector3f c;
-};
-
-// Declare input/output buffer from/to wich we will read/write data.
-// In this particular shader we only write data into the buffer.
-// If you do not want your data to be aligned by compiler try to use:
-// packed or shared instead of std140 keyword.
-// We also bind the buffer to index 0. You need to set the buffer binding
-// in the range [0..3] – this is the minimum range approved by Khronos.
-// Notice that various platforms might support more indices than that.
-
-layout(std140, binding = 0) buffer destBuffer
-{
-    AttribData data[];
-} outBuffer;
-
-// Declare what size is the group. In our case is 8x8, which gives 64 group size.
-
-layout (local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-
-// Declare main program function which is executed once glDispatchCompute is called from the application.
-
-void main()
-{
-    // Read current global position for this thread
-    ivec2 storePos = ivec2(gl_GlobalInvocationID.xy);
-
-    // Calculate the global number of threads (size) for this
-    uint gWidth = gl_WorkGroupSize.x * gl_NumWorkGroups.x;
-
-    uint gHeight = gl_WorkGroupSize.y * gl_NumWorkGroups.y;
-
-    uint gSize = gWidth * gHeight;
-
-    // Since we have 1D array we need to calculate offset.
-    uint offset = storePos.y * gWidth + storePos.x;
-
-    // Calculate an angle for the current thread
-    float alpha = 2.0 * 3.14159265359 * (float(offset) / float(gSize));
-
-    // Calculate vertex position based on the already calculate angle
-    // and radius, which is given by application
-    outBuffer.data[offset].v.x = sin(alpha) * radius;
-    outBuffer.data[offset].v.y = cos(alpha) * radius;
-    outBuffer.data[offset].v.z = 0.0;
-    outBuffer.data[offset].v.w = 1.0;
-
-    // Assign colour for the vertex
-    outBuffer.data[offset].c.x = storePos.x / float(gWidth);
-    outBuffer.data[offset].c.y = 0.0;
-    outBuffer.data[offset].c.z = 1.0;
-    outBuffer.data[offset].c.w = 1.0;
-}
-"##;
+// const GROUP_SIZE: u32 = 64;
+// const NUM_VERTS: u32 = 256;
 
 pub fn main() {
     let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
@@ -131,10 +48,11 @@ pub fn main() {
     window.make_current();
     window.set_key_polling(true);
 
-    // TODO: I don't think the documentation on this is correct.
     window.set_framebuffer_size_polling(true);
 
     graphics::load_with(|symbol| window.get_proc_address(symbol));
+
+    // TODO: Print out some info about the graphics drivers
 
     let vertices: [f32; 24] = [
         0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, 0.5,
@@ -149,50 +67,53 @@ pub fn main() {
     let location = 0;
     let size = 3;
 
-    let vao = vertex_array_from_vertices(location, size, &vertices, &indices);
+    let va = vertex_array_from_vertices(location, size, &vertices, &indices);
 
-    let vs = graphics::ShaderType::Vertex.create();
-    vs.source(vertexShaderSource);
+    // let vbo = Buffer::new();
+
+    let vs = ShaderType::Vertex.create();
+    vs.source(vertexShaderSourceCircle);
     vs.compile().unwrap();
 
-    let fs = graphics::ShaderType::Fragment.create();
-    fs.source(fragmentShaderSource);
+    let fs = ShaderType::Fragment.create();
+    fs.source(fragmentShaderSourceCircle);
     fs.compile().unwrap();
 
-    let render_program = graphics::Program::create();
+    let render_program = Program::create();
     render_program.attach(&vs);
     render_program.attach(&fs);
     render_program.link().unwrap();
 
-    // let cs = graphics::Shader::create(graphics::ShaderType::Compute);
-    // cs.source(computeShaderSource);
+    // let cs = ShaderType::Compute.create();
+    // cs.source(computeShaderSourceCircle);
     // cs.compile().unwrap();
 
-    // let compute_program = graphics::Program::create();
+    // let compute_program = Program::create();
     // compute_program.attach(&cs);
     // compute_program.link().unwrap();
 
     while !window.should_close() {
         process_events(&mut window, &events);
 
-        // compute_program.use_program();
+        /*
+        compute_program.use_program();
 
-        // let radius_location = compute_program.get_uniform_location("radius");
-        // unsafe {
-        // TODO: Make the radius vary for each frame.
-        // gl::Uniform1f(radius_location, 0.5 as GLfloat);
-        // }
+        let radius_location = compute_program.get_uniform_location("radius");
+        unsafe {
+            // TODO: Make the radius vary for each frame.
+            gl::Uniform1f(radius_location, 0.5 as GLfloat);
+        }
 
         // Bind the VBO onto the SSBO, which is going to be filled within the compute shader.
-        /*
-        let index_buffer_binding  = 0;
+
+        let index_buffer_binding = 0;
         unsafe {
             // We need a vbo object for the last argument.
-            gl::BindBufferBase(gl::SHADER_STORAGE_BUFFER, index_buffer_binding, 0);
+            gl::BindBufferBase(gl::SHADER_STORAGE_BUFFER, index_buffer_binding, vbo.name);
         }
 
         unsafe {
-            gl::DispatchCompute(2, 2, 1);
+            gl::DispatchCompute(NUM_VERTS / GROUP_SIZE, 1, 1);
         }
 
         // Unbind the SSBO buffer.
@@ -205,25 +126,31 @@ pub fn main() {
         }
         */
 
-        graphics::clear_color(0.1, 0.1, 0.1, 1.0);
-        graphics::clear();
+        clear_color(0.1, 0.1, 0.1, 1.0);
+        clear();
 
-        let mut transform: Matrix4<f32> = Matrix4::identity();
+        // let mut transform: Matrix4<f32> = Matrix4::identity();
         // transform = transform * Matrix4::<f32>::from_translation(vec3(0.5, -0.5, 0.0));
-        transform = transform * Matrix4::<f32>::from_angle_z(Rad(glfw.get_time() as f32));
+        // transform = transform * Matrix4::<f32>::from_angle_z(Rad(glfw.get_time() as f32));
 
         render_program.use_program();
 
-        let transform_location = render_program.get_uniform_location("transform");
-        unsafe {
-            gl::UniformMatrix4fv(transform_location, 1, gl::FALSE, transform.as_ptr());
-        }
+        // let transform_location = render_program.get_uniform_location("transform");
+        //unsafe {
+        //    gl::UniformMatrix4fv(transform_location, 1, gl::FALSE, transform.as_ptr());
+        //}
 
-        vao.bind();
+        va.bind();
 
-        graphics::draw_elements(graphics::DrawMode::Triangles, 6);
+        // Array.bind(&vbo);
+        // enable_vertex_attrib(0);
+        // enable_vertex_attrib(1);
 
-        vao.unbind();
+        draw_elements(Triangles, 6);
+        // draw_arrays(Points, 0, NUM_VERTS as GLsizei);
+
+        va.unbind();
+        // Array.unbind();
 
         window.swap_buffers();
 
@@ -244,7 +171,7 @@ fn process_events(window: &mut glfw::Window, events: &Receiver<(f64, glfw::Windo
 
                 // glViewport sets up the transformation from gl_Position values in the vertex shader
                 // output to the window. gl_Position values are between -1 and 1.
-                graphics::viewport(0, 0, width, height)
+                viewport(0, 0, width, height)
             }
             glfw::WindowEvent::Key(Key::Escape, _, Action::Press, _) => {
                 window.set_should_close(true)
@@ -262,54 +189,152 @@ fn process_events(window: &mut glfw::Window, events: &Receiver<(f64, glfw::Windo
         }
     }
 }
+
+//
 pub fn vertex_array_from_vertices(
-    index: u32,
+    location: u32,
     size: i32,
     vertices: &[f32],
     indices: &[u32],
 ) -> graphics::VertexArray {
-    let vbo = graphics::Buffer::new();
-    let ebo = graphics::Buffer::new();
+    // Create Vertex and Index buffers.
+    let vb = Buffer::new();
+    let ib = Buffer::new();
 
-    let va = graphics::VertexArray::new();
-
-    va.bind();
-
-    graphics::BufferTarget::Array.bind(&vbo);
-    graphics::BufferTarget::Array.buffer_data(
+    // Bind the vertex buffer to the GL_ARRAY_BUFFER target.
+    // This does not immediately impact the VAO. Instead this
+    // buffer is noted when the attribute location  is described below.
+    Array.bind(&vb);
+    Array.buffer_data(
         vertices.len() * mem::size_of::<f32>(),
         &vertices[0] as *const f32 as *const c_void,
         gl::STATIC_DRAW,
     );
+    Array.unbind();
 
-    graphics::BufferTarget::ElementArray.bind(&ebo);
-    graphics::BufferTarget::ElementArray.buffer_data(
+    ElementArray.bind(&ib);
+    ElementArray.buffer_data(
         indices.len() * mem::size_of::<u32>(),
         &indices[0] as *const u32 as *const c_void,
         gl::STATIC_DRAW,
     );
+    ElementArray.unbind();
 
-    graphics::vertex_attrib_pointer(
-        index,
+    let vao = VertexArray::new();
+
+    vao.bind();
+
+    // This call changes the state of the VAO.
+    // https://www.khronos.org/opengl/wiki/Vertex_Specification
+    // The VAO will record that the attribute with the location given will get its data
+    // from the buffer that is currently bound to GL_ARRAY_BUFFER.
+    // Note: If the GL_ARRAY_BUFFER has no binding then things go badly wrong.
+    Array.bind(&vb);
+    vertex_attrib_pointer(
+        location,
         size,
         gl::FLOAT,
         gl::FALSE,
         3 * mem::size_of::<f32>(),
         ptr::null(),
     );
-    graphics::enable_vertex_attrib_array(index);
+    Array.unbind();
+
+    // The spec says that a new VAO has array access is disabled for all attributes.
+    enable_vertex_attrib(location);
 
     // note that this is allowed, the call to gl::VertexAttribPointer registered VBO
     // as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
-    graphics::BufferTarget::Array.unbind();
+    // Array.unbind();
 
     // remember: do NOT unbind the EBO while a VAO is active as the bound element buffer object
     // IS stored in the VAO; keep the EBO bound.
     // Target::ElementArrayBuffer.unbind();
 
-    va.unbind();
+    // It's a bit bizarre, but the action of binding the index buffer is what is remembered by the VAO,
+    // or perhaps the VAO notes the index buffer when it unbinds?
+    ElementArray.bind(&ib);
 
-    graphics::BufferTarget::ElementArray.unbind();
+    vao.unbind();
 
-    va
+    ElementArray.unbind();
+
+    vao
 }
+
+#[allow(dead_code)]
+const vertexShaderSourceBox: &str = r##"#version 460 core
+    layout (location = 0) in vec3 aPos;
+
+    uniform mat4 transform;
+
+    void main()
+    {
+       gl_Position = transform * vec4(aPos.x, aPos.y, aPos.z, 1.0);
+    }
+"##;
+
+#[allow(dead_code)]
+const fragmentShaderSourceBox: &str = r##"#version 460 core
+    out vec4 FragColor;
+    void main()
+    {
+       FragColor = vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    }
+"##;
+
+#[allow(dead_code)]
+const computeShaderSourceCircle: &str = r##"#version 460 core
+
+uniform float radius;
+
+struct AttribData
+{
+    vec4 v;
+    vec4 c;
+};
+
+layout(std140, binding = 0) buffer destBuffer
+{
+    AttribData data[];
+} outBuffer;
+
+layout (local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+void main()
+{
+    uint storePos = gl_GlobalInvocationID.x;
+
+    // Calculate the global number of threads (size) for this work dispatch.
+    uint gSize = gl_WorkGroupSize.x * gl_NumWorkGroups.x;
+
+    float alpha = 2.0 * 3.14159265359 * (float(storePos) / float(gSize));
+
+    outBuffer.data[storePos].v = vec4(sin(alpha) * radius, cos(alpha) * radius, 0.0, 1.0);
+
+	outBuffer.data[storePos].c = vec4(float(storePos) / float(gSize), 0.0, 1.0, 1.0);
+}
+"##;
+
+#[allow(dead_code)]
+const vertexShaderSourceCircle: &str = r##"
+attribute vec4 a_v4Position;
+attribute vec4 a_v4FillColor;
+
+varying vec4 v_v4FillColor;
+
+void main()
+{
+    v_v4FillColor = a_v4FillColor;
+    gl_Position = a_v4Position;
+}"##;
+
+#[allow(dead_code)]
+const fragmentShaderSourceCircle: &str = r##"
+varying vec4 v_v4FillColor;
+
+void main()
+{
+    // gl_FragColor = v_v4FillColor;
+    gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+}"##;
