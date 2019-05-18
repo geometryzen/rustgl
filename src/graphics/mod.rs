@@ -1,6 +1,7 @@
 extern crate gl;
 use self::gl::types::*;
 
+use std::mem;
 use std::os::raw::c_void;
 use std::ptr;
 
@@ -11,13 +12,31 @@ use std::str;
 /// A BufferTarget is something to which a Buffer object may be bound.
 #[allow(dead_code)]
 pub enum BufferTarget {
-    Array,
-    ElementArray,
+    VertexTarget,
+    ElementTarget,
     ShaderStorage,
 }
 
 impl BufferTarget {
-    pub fn bind(self, buffer: &Buffer) {
+    pub fn copy_vertices(self, vertices: &[f32], buffer: &Buffer) {
+        self.bind(buffer);
+        self.buffer_data(
+            vertices.len() * mem::size_of::<f32>(),
+            &vertices[0] as *const f32 as *const c_void,
+            gl::STATIC_DRAW,
+        );
+        self.unbind();
+    }
+    pub fn copy_elements(self, elements: &[u32], buffer: &Buffer) {
+        self.bind(buffer);
+        self.buffer_data(
+            elements.len() * mem::size_of::<u32>(),
+            &elements[0] as *const u32 as *const c_void,
+            gl::STATIC_DRAW,
+        );
+        self.unbind();
+    }
+    pub fn bind(&self, buffer: &Buffer) {
         unsafe {
             gl::BindBuffer(self.target(), buffer.name);
         }
@@ -27,15 +46,15 @@ impl BufferTarget {
             gl::BindBuffer(self.target(), 0);
         }
     }
-    pub fn buffer_data(self, size: usize, data: *const c_void, usage: GLenum) {
+    pub fn buffer_data(&self, size: usize, data: *const c_void, usage: GLenum) {
         unsafe {
             gl::BufferData(self.target(), size as GLsizeiptr, data, usage);
         }
     }
-    fn target(self) -> GLenum {
+    fn target(&self) -> GLenum {
         match self {
-            BufferTarget::Array => gl::ARRAY_BUFFER,
-            BufferTarget::ElementArray => gl::ELEMENT_ARRAY_BUFFER,
+            BufferTarget::VertexTarget => gl::ARRAY_BUFFER,
+            BufferTarget::ElementTarget => gl::ELEMENT_ARRAY_BUFFER,
             BufferTarget::ShaderStorage => gl::SHADER_STORAGE_BUFFER,
         }
     }

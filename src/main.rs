@@ -6,7 +6,6 @@ use self::glfw::{Action, Context, Key};
 // use self::gl::types::*;
 
 use std::mem;
-use std::os::raw::c_void;
 use std::ptr;
 use std::str;
 use std::sync::mpsc::Receiver;
@@ -19,8 +18,8 @@ use graphics::{
 };
 #[allow(unused_imports)]
 use graphics::{
-    Buffer, BufferTarget::Array, BufferTarget::ElementArray, DrawMode::Points, DrawMode::Triangles,
-    Program, ShaderType, VertexArray,
+    Buffer, BufferTarget::ElementTarget, BufferTarget::VertexTarget, DrawMode::Points,
+    DrawMode::Triangles, Program, ShaderType, VertexArray,
 };
 
 // use cgmath::prelude::*;
@@ -59,7 +58,7 @@ pub fn main() {
         -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, -0.5,
     ];
 
-    let indices: [u32; 36] = [
+    let elements: [u32; 36] = [
         1, 2, 0, 3, 0, 2, 5, 6, 0, 1, 0, 6, 2, 1, 7, 6, 7, 1, 5, 0, 4, 3, 4, 0, 2, 7, 3, 4, 3, 7,
         7, 6, 4, 6, 4, 6,
     ];
@@ -67,9 +66,15 @@ pub fn main() {
     let location = 0;
     let size = 3;
 
-    let va = vertex_array_from_vertices(location, size, &vertices, &indices);
+    let vb = Buffer::new();
 
-    // let vbo = Buffer::new();
+    VertexTarget.copy_vertices(&vertices, &vb);
+
+    let eb = Buffer::new();
+
+    ElementTarget.copy_elements(&elements, &eb);
+
+    let va = vertex_specification(location, size, &vb, &eb);
 
     let vs = ShaderType::Vertex.create();
     vs.source(vertexShaderSourceCircle);
@@ -190,47 +195,21 @@ fn process_events(window: &mut glfw::Window, events: &Receiver<(f64, glfw::Windo
     }
 }
 
-// TODO: It should be possible to separate the uploading of the vertex and element data from
-// the construction of the vertex specification.
-pub fn vertex_array_from_vertices(
+pub fn vertex_specification(
     location: u32,
     size: i32,
-    vertices: &[f32],
-    indices: &[u32],
+    vertex_buffer: &Buffer,
+    element_buffer: &Buffer,
 ) -> graphics::VertexArray {
-    // Create Vertex and Index buffers.
-    let vb = Buffer::new();
-    let ib = Buffer::new();
-
-    // Bind the vertex buffer to the GL_ARRAY_BUFFER target.
-    // This does not immediately impact the VAO. Instead this
-    // buffer is noted when the attribute location  is described below.
-    Array.bind(&vb);
-    Array.buffer_data(
-        vertices.len() * mem::size_of::<f32>(),
-        &vertices[0] as *const f32 as *const c_void,
-        gl::STATIC_DRAW,
-    );
-    Array.unbind();
-
-    ElementArray.bind(&ib);
-    ElementArray.buffer_data(
-        indices.len() * mem::size_of::<u32>(),
-        &indices[0] as *const u32 as *const c_void,
-        gl::STATIC_DRAW,
-    );
-    ElementArray.unbind();
-
     let vao = VertexArray::new();
 
     vao.bind();
 
+    VertexTarget.bind(&vertex_buffer);
     // This call changes the state of the VAO.
     // https://www.khronos.org/opengl/wiki/Vertex_Specification
     // The VAO will record that the attribute with the location given will get its data
-    // from the buffer that is currently bound to GL_ARRAY_BUFFER.
-    // Note: If the GL_ARRAY_BUFFER has no binding then things go badly wrong.
-    Array.bind(&vb);
+    // from the buffer that is currently bound to the VertexTarget.
     vertex_attrib_pointer(
         location,
         size,
@@ -239,26 +218,18 @@ pub fn vertex_array_from_vertices(
         3 * mem::size_of::<f32>(),
         ptr::null(),
     );
-    Array.unbind();
+    VertexTarget.unbind();
 
     // The spec says that a new VAO has array access is disabled for all attributes.
     enable_vertex_attrib(location);
 
-    // note that this is allowed, the call to gl::VertexAttribPointer registered VBO
-    // as the vertex attribute's bound vertex buffer object so afterwards we can safely unbind
-    // Array.unbind();
-
-    // remember: do NOT unbind the EBO while a VAO is active as the bound element buffer object
-    // IS stored in the VAO; keep the EBO bound.
-    // Target::ElementArrayBuffer.unbind();
-
     // It's a bit bizarre, but the action of binding the index buffer is what is remembered by the VAO,
     // or perhaps the VAO notes the index buffer when it unbinds?
-    ElementArray.bind(&ib);
+    ElementTarget.bind(&element_buffer);
 
     vao.unbind();
 
-    ElementArray.unbind();
+    ElementTarget.unbind();
 
     vao
 }
