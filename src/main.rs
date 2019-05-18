@@ -190,7 +190,8 @@ fn process_events(window: &mut glfw::Window, events: &Receiver<(f64, glfw::Windo
     }
 }
 
-//
+// TODO: It should be possible to separate the uploading of the vertex and element data from
+// the construction of the vertex specification.
 pub fn vertex_array_from_vertices(
     location: u32,
     size: i32,
